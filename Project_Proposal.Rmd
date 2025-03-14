@@ -1,0 +1,36 @@
+---
+title: 'STAT 447 Project Proposal'
+author: 'Daniel Pliego Mier 29619889'
+date: "14 March, 2025"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#if you do not have the package, type install.packages("name_of_the_package")
+library(knitr)
+library(tseries)
+library(readxl)
+library(dplyr)
+```
+
+
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+
+# Call get_dataset() which is on the other file
+data <- get_dataset()
+
+#Print head
+head(data)
+
+
+```
+
+
+
+
+
+
+
+
+
