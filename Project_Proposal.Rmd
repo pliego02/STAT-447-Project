@@ -11,8 +11,18 @@ library(knitr)
 library(tseries)
 library(readxl)
 library(dplyr)
+
+source("Data_clean.R")
 ```
 
+
+I will work on this project independently, using a data set provided by Dr. Matthew Tarling from the Geological Sciences department at UBC. This data set consists of thickness measurements of consecutive layers or bands measured in micrometers from six different samples of "crack-seal veins".
+
+
+Crack-seal veins are created  beneath Earth's surface through repeated fractures and sealing. Geological processes generate fractures in rocks, which due to the pressure generated in these conditions these cracks cannot remain open. Instead they are filled with liquids that precipitate crystals, creating distinct alternating layers of the original rock and the precipitate mineral. Each layer indicates a distinct fracture and sealing event. 
+
+
+The aim of this project is to statistically analyze these processes by fitting models to the data set and performing model selection. By identifying the best-performing model, I will investigate whether there are dependencies between consecutive layers within samples. This will hopefully provides better understanding of the statistical patterns and dependence observed in band thickness of crack-seal veins. 
 
 
 ```{r, echo=TRUE, message=FALSE, warning=FALSE}
