@@ -2,6 +2,9 @@
 title: 'STAT 447 Project Proposal'
 author: 'Daniel Pliego Mier 29619889'
 date: "14 March, 2025"
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}

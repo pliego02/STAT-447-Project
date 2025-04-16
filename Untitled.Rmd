@@ -1,0 +1,684 @@
+---
+title: 'Crack-Seal Veins Data Clean up'
+author: 'Daniel Pliego'
+date: " March, 2025"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#if you do not have the package, type install.packages("name_of_the_package")
+library(knitr)
+library(tseries)
+library(readxl)
+library(dplyr)
+library(rstan)
+library(bayesplot)
+library(ggplot2)
+```
+
+
+
+This here is to get the dataset, I am going to not use samples 4 and 6. they are too small.
+
+
+
+```{r}
+data <- get_dataset()
+
+data <- data %>%
+  # Remove rows where Sample is 4 or 6
+  filter(!(Sample %in% c(4,6))) %>%
+  #re label sample 5 to 4
+  mutate(Sample = ifelse(Sample == 5, 4, Sample))
+```
+
+Call the first stan model with the exponential distribution. This model is of the form:
+
+$$
+\lambda_i \sim Gamma(3,90)
+$$
+$$
+X_n | \lambda_i  \sim Exp(\lambda_i)
+$$
+Where X_n is the thickness observed thickness and $\lambda_i$ is the parameter for each sample i
+
+I will call the stan model to generate lambda's for each one of the samples
+
+I will use COV as a measure of the how the exponential distribution fits the data as it is the same measurement used on the paper and we should expect similar results. Along with this, the plots should give us a general idea of how the exponential distribution fits the data. 
+
+I will later do posterior predictive checks to ensure the model is well specified, the model is very simple so this should work well.
+
+
+```{r}
+stan_data <- list(
+  N = nrow(data),          
+  x = data$Thickness,       
+  sample = data$Sample      
+)
+
+# Compile and sample
+fit <- stan(
+  file = "exponential_model.stan",
+  data = stan_data,
+  iter = 10000,
+  chains = 1
+)
+```
+
+
+
+
+
+```{r, fig.height=8}
+# For the plots
+par(mfrow = c(2, 2))
+
+# I am going to make plots that show the observed data along with the posterior
+# distribution created by stan.
+
+# Extract the posterior samples for lambda from the fit.
+lambda_samples <- extract(fit)$lambda
+
+#Initialize a list to save the results
+cv_results_exp <- list()
+
+# Loop over each sample 
+for (s in 1:4) {
+  
+  # Filter the observed data for sample s based on the index provided in stan_data.
+  indices <- which(stan_data$sample == s)
+  data_obs <- stan_data$x[indices]
+  
+  # Number of observations for the current sample
+  N_obs <- length(data_obs)
+  
+  # Generate replicated datasets for the current sample.
+  # Pick 100 posterior draws from the current sample's lambda
+  set.seed(123)  # for reproducibility
+  n_rep <- 100
+  selected_indices <- sample(1:nrow(lambda_samples), n_rep)
+  
+  # Initialize a matrix to hold replicated data for the current sample
+  replicated_data <- matrix(NA, nrow = N_obs, ncol = n_rep)
+  
+  # For each of the selected posterior samples, generate replicated data 
+  for (i in 1:n_rep) {
+    lambda_i <- lambda_samples[selected_indices[i], s]  # extract lambda for sample s
+    # Generate N_obs new thickness values under Exponential(rate = lambda_i)
+    replicated_data[, i] <- rexp(N_obs, rate = lambda_i)
+  }
+  
+  # Plot the histogram of the observed data for sample s
+  hist(data_obs, breaks = 30, probability = TRUE,
+       main = paste("Sample", s, "Posterior Distrbution and Observed Data"),
+       xlab = "Thickness",
+       col = rgb(1, 0, 0, 0.5),
+       border = "white")
+  
+  # Overlay histograms of replicated datasets with transparent blue
+  for (i in 1:n_rep) {
+    hist(replicated_data[, i], breaks = 30, probability = TRUE, add = TRUE,
+         col = rgb(0, 0, 1, 0.01), border = NA)
+  }
+  
+   # --- Coefficient of Variation calculations ---
+  cov_obs <- sd(data_obs) / mean(data_obs)
+  cov_rep <- apply(replicated_data, 2, function(x) sd(x) / mean(x))
+  cov_interval <- quantile(cov_rep, probs = c(0.025, 0.975))
+  
+  # Add CoV info to the legend
+  legend("topright", bty = "n",
+         legend = c(
+           sprintf("CV obs = %.3f", cov_obs),
+           sprintf("95%% CI = [%.3f, %.3f]", cov_interval[1], cov_interval[2])
+         ))
+  
+  # Save the results for summary later
+  cv_results_exp[[s]] <- list(
+    observed = cov_obs,
+    interval = cov_interval,
+    within_interval = cov_obs >= cov_interval[1] && cov_obs <= cov_interval[2]
+  )
+}
+
+
+
+```
+As expected in all of the samples the observed COV is far away from the 95% interval. We can also see that the posterior distribution with an exponential likelihood for the thickness does not fit the data very well. This is expected and is what was show on the paper.
+
+
+Now I will do posterior predictive checks to ensure the model is well specified, again it is a simple model so it should be well specified.
+
+```{r}
+
+# We'll store the "in interval?" result for each sample, each observation
+loo_results <- list()
+
+# For loop for each sample
+for (s in 1:4) {
+  idx_s <- which(stan_data$sample == s)
+  data_obs_s <- stan_data$x[idx_s]
+  N_s <- length(data_obs_s)
+  
+  # We'll track for each observation n if y_n is in the 99% interval
+  in_99pct_interval <- logical(N_s)
+  
+  for (n in seq_len(N_s)) {
+    # Data minus observation n
+    data_minus_n <- data_obs_s[-n]
+    
+    # I run stan again, I have an exponential model that deals with
+    # a single sample for this
+    stan_data_minus_n <- list(
+      N = length(data_minus_n),
+      x = data_minus_n
+    )
+    
+    # call the single sample
+    fit_minus_n <- stan(
+      file = "exponential_single_sample.stan",
+      data = stan_data_minus_n,
+      iter = 10000,  
+      chains = 1,
+      refresh = 0
+    )
+    
+    # Get the single lambda
+    lambda_draws <- extract(fit_minus_n)$lambda  
+    
+
+    repl_draws <- rexp(length(lambda_draws), rate = lambda_draws)
+    
+    # 99% predictive interval
+    int_99 <- quantile(repl_draws, probs = c(0.005, 0.995))
+    
+    # Check if the omitted actual y_n is the 99% interval
+    in_99pct_interval[n] <- (data_obs_s[n] >= int_99[1]
+                             && data_obs_s[n] <= int_99[2])
+    
+  }
+  
+  # Summary for sample s
+   # fraction of points in interval
+  coverage <- mean(in_99pct_interval) 
+  cat(sprintf("Sample %d:  coverage in 99%% intervals = %.2f%%\n",
+              s, 100 * coverage))
+  
+  # store results
+  loo_results[[s]] <- list(
+    sample = s,
+    in_interval_flags = in_99pct_interval,
+    coverage = coverage
+  )
+}
+
+```
+Model is well specified, its a simple model so this was expected
+
+The model is simple enough that I wont provide trace plots or rank plots in order to save space. I had a look at them and they looked good as expected. 
+
+
+## Model 2, Gamma model
+
+Now that we have seen that the exponential model does not fit the data properly, which  is due to the assumption of equal variance and mean. I will implement a Gamma model to relax that assumption. 
+
+I will also implement a hierarchical model to help inform the prior.
+
+$$
+\mu_{\alpha} \sim Exp(1)
+$$
+
+$$
+\theta_{\alpha} \sim Exp(1)
+$$
+$$
+\mu_{\beta} \sim Exp(1)
+$$
+
+$$
+\theta_{\beta} \sim Exp(1)
+$$
+
+
+
+$$
+\alpha_i |\mu_{\alpha}, \theta_{\alpha} \sim Gamma(\mu_{\alpha},\theta_{\alpha})
+$$
+
+$$
+\beta_i |\mu_{\beta}, \theta_{\beta} \sim Gamma(\mu_{\beta},\theta_{\beta})
+$$
+
+
+$$
+X_n |\alpha_i, \beta_i \sim Gamma(\alpha_i, \beta_i )
+$$
+
+
+
+```{r}
+stan_data <- list(
+  N = nrow(data),          
+  x = data$Thickness,       
+  sample = data$Sample      
+)
+
+# Compile and sample
+fit <- stan(
+  file = "gamma_model.stan",
+  data = stan_data,
+  iter = 10000,
+  chains = 1
+)
+```
+
+
+
+
+
+
+I will perform both tests that were done above, make plots and get COV, and ensure that the model is well specified, I will also provide rank plots and trace plots.
+
+
+```{r, fig.height=8}
+
+# Extract posterior samples for sample specific parameters:
+alpha_samples <- extract(fit)$alpha   
+beta_samples  <- extract(fit)$beta    
+
+# Get the observed data
+data_obs <- stan_data$x
+sample_id <- stan_data$sample
+N <- stan_data$N
+
+# simulate samples
+set.seed(123)          
+n_rep <- 100           
+n_samples <- 4      
+
+# To store replicated datasets per group
+replicated_data_list <- vector("list", n_samples)  
+obs_by_sample <- vector("list", n_samples)       
+ # To hold observed CoV for each sample
+cov_obs <- numeric(n_samples)                     
+cov_rep <- matrix(NA, nrow = n_rep, ncol = n_samples)  
+
+# Randomly select indices (rows) from the posterior samples
+selected_indices <- sample(1:nrow(alpha_samples), n_rep)
+
+for (s in 1:n_samples) {
+  # Get observed data for sample s:
+  obs <- data_obs[sample_id == s]
+  obs_by_sample[[s]] <- obs
+  N_s <- length(obs)
+  
+  # Initialize matrix to store replicated datasets for current sample s
+  replicated_data <- matrix(NA, nrow = N_s, ncol = n_rep)
+  
+  # Generate replicated datasets for sample s using 100 posterior draws:
+  for (i in 1:n_rep) {
+    a <- alpha_samples[selected_indices[i], s]  # draw sample-specific alpha
+    b <- beta_samples[selected_indices[i], s]   # draw sample-specific beta
+    # Generate N_s new observations from Gamma(shape = a, rate = b)
+    replicated_data[, i] <- rgamma(N_s, shape = a, rate = b)
+  }
+  
+  replicated_data_list[[s]] <- replicated_data
+  
+  # Calculate the observed CoV for sample s:
+  cov_obs[s] <- sd(obs) / mean(obs)
+  
+  # Calculate the replicated CoVs for sample s:
+  cov_rep[, s] <- apply(replicated_data, 2, function(x) sd(x) / mean(x))
+}
+
+
+
+## Make the plots
+par(mfrow = c(2, 2))  # Set up a 2x2 plotting area
+
+cv_results_gamma <- list()  # to store CoV results for each sample
+
+for (s in 1:n_samples) {
+  # Plot the histogram of observed data for sample s:
+  hist(obs_by_sample[[s]], breaks = 30, probability = TRUE,
+       main = paste("Sample", s, "- PPC "),
+       xlab = "Thickness",
+       col = rgb(1, 0, 0, 0.5), border = "white")
+  
+  # Overlay histograms for each replicated dataset for sample s:
+  for (i in 1:n_rep) {
+    hist(replicated_data_list[[s]][, i], breaks = 30, probability = TRUE,
+         add = TRUE, col = rgb(0, 0, 1, 0.01), border = NA)
+  }
+  
+  # Compute the 95% credible interval for the CoV from replicated data:
+  cov_interval <- quantile(cov_rep[, s], probs = c(0.025, 0.975))
+  
+  # Add a legend with the observed CoV and its 95% interval:
+  legend("topright", bty = "n",
+         legend = c(
+           sprintf("CV obs = %.3f", cov_obs[s]),
+           sprintf("95%% CI = [%.3f, %.3f]", cov_interval[1], cov_interval[2])
+         ))
+  
+  # Save the CoV results for summary later:
+  cv_results_gamma[[s]] <- list(
+    observed = cov_obs[s],
+    interval = cov_interval,
+    within_interval = (cov_obs[s] >= cov_interval[1] && cov_obs[s] <= cov_interval[2])
+  )
+}
+
+
+```
+
+Looking at the plots, the hierarchical gamma model appears to fit the data much better, additionally the CoV measurement is now inside the 95% CI provided by the posterior distribution.
+
+
+
+Due to the hierarchical model, to compute posterior predictive I would need to fit n stan models, if I have time this should be ran and checked, I dont have the time to run it currently. I will provide trace plots and rank plots.
+
+
+```{r}
+
+stan_data <- list(
+  N = nrow(data),             
+  x = data$Thickness,         
+  sample = data$Sample         
+)
+
+# Fit 2 chains to make the plots
+fit <- stan(
+  file = "gamma_model.stan",
+  data = stan_data,
+  iter = 10000,
+  chains = 2,
+)
+
+
+```
+```{r}
+
+#Trace plots for parameters
+mcmc_trace(fit, pars = c("alpha[2]", "beta[2]")) 
+
+
+# Rank plots
+posterior_array <- as.array(fit)
+
+
+# Rank histograms for hyperparameters
+mcmc_rank_hist(posterior_array, 
+               pars = c("mu_alpha", "mu_beta", "theta_alpha", "theta_beta")) +
+  ggtitle("Rank Histograms for Hyperparameters")
+
+# Rank histograms for alpha parameters
+mcmc_rank_hist(posterior_array, 
+               pars = paste0("alpha[", 1:4, "]")) +
+  ggtitle("Rank Histograms for Alpha Parameters") 
+
+# Rank histograms for beta parameters
+mcmc_rank_hist(posterior_array, 
+               pars = paste0("beta[", 1:4, "]")) +
+  ggtitle("Rank Histograms for Beta Parameters") 
+```
+
+
+Everything looks good. Both chains on the trace plot appear to behave similarly and the rank plots appear uniform as desired. 
+
+
+The code below is to run posterior predictive checks. It wont de done for now to do computational cost of fitting so many stan models. ChatGPT was used to help debugg this. I think the code works well and if time I will run it but I wont do so for now. 
+
+```{r}
+
+loo_results <- list()
+
+# Loop over each sample
+for (s in 1:4) {
+  # Get indices and data for sample s
+  idx_s <- which(stan_data$sample == s)
+  data_obs_s <- stan_data$x[idx_s]
+  N_s <- length(data_obs_s)
+  
+  # We'll store for each observation whether it falls in the 99% interval.
+  in_99pct_interval <- logical(N_s)
+  
+  # Loop over each observation in sample s
+  for (n in seq_len(N_s)) {
+    idx_leave <- idx_s[n]
+    new_x <- stan_data$x[-idx_leave]
+    new_sample <- stan_data$sample[-idx_leave]
+    new_N <- length(new_x)
+    
+    stan_data_minus_n <- list(
+      N = new_N,
+      x = new_x,
+      sample = new_sample
+    )
+    
+    # fit the model witouth one observation
+    fit_minus_n <- stan(
+      file = "gamma_model.stan",
+      data = stan_data_minus_n,
+      iter = 10000,
+      chains = 1,
+      refresh = 0
+    )
+    
+    # Get posterior samples
+    alpha_samples <- extract(fit_minus_n)$alpha[, s]
+    beta_samples  <- extract(fit_minus_n)$beta[, s]
+    
+    # Simulate draws from gamma dsitrbution
+    n_draws <- length(alpha_samples)
+    pred_draws <- numeric(n_draws)
+    for (i in 1:n_draws) {
+      pred_draws[i] <- rgamma(1, shape = alpha_samples[i], rate = beta_samples[i])
+    }
+    
+    # Compute the 99% predictive interval
+    int_99 <- quantile(pred_draws, probs = c(0.005, 0.995))
+    
+    # Check if the left-out observation falls within the 99% interval
+    left_out_value <- data_obs_s[n]
+    in_99pct_interval[n] <- (left_out_value >= int_99[1] &&
+                             left_out_value <= int_99[2])
+  }
+  
+  # Summary for sample s
+  coverage <- mean(in_99pct_interval)
+  cat(sprintf("Sample %d:  coverage in 99%% intervals = %.2f%%\n", s, 100 * coverage))
+  
+  # Store the results
+  loo_results[[s]] <- list(
+    sample = s,
+    in_interval_flags = in_99pct_interval,
+    coverage = coverage
+  )
+}
+
+```
+
+
+## Model 3, Normal model
+
+Finally I want to test a normal distribution model. The normal distribution does not have a support on the positive real numbers as the gamma and exponential distribution do. However the thickness values are on average a few standard deviations away from 0. Which makes it so that fitting a normal distribution should have little to no predictions which are negative. I will also use a hierarchical model to help inform the prior. 
+
+
+
+```{r}
+stan_data <- list(
+  N = nrow(data),          
+  x = data$Thickness,       
+  sample = data$Sample      
+)
+
+# Compile and sample
+fit <- stan(
+  file = "normal_model.stan",
+  data = stan_data,
+  iter = 10000,
+  chains = 1
+)
+```
+
+
+
+
+
+```{r, fig.height=8}
+
+mu_samples <- extract(fit)$mu      
+theta_samples <- extract(fit)$theta  
+
+data_obs   <- stan_data$x           
+sample_id  <- stan_data$sample     
+N          <- stan_data$N            
+
+# number of posterior draws 
+n_rep    <- 100   
+# total number of samples
+n_groups <- 4     
+
+# To store replicated datasets, observed data for each group,
+replicated_data_list <- vector("list", n_groups)
+obs_by_sample        <- vector("list", n_groups)
+cov_obs              <- numeric(n_groups)
+cov_rep              <- matrix(NA, nrow = n_rep, ncol = n_groups)
+
+# Randomly select indices from posterior draws for replication
+selected_indices <- sample(1:nrow(mu_samples), n_rep)
+
+# Loop over each group
+for (s in 1:n_groups) {
+  # Get the observed data for group s  
+  obs <- data_obs[sample_id == s]
+  obs_by_sample[[s]] <- obs
+  N_s <- length(obs)
+  
+  # Initialize matrix for replicated data 
+  replicated_data <- matrix(NA, nrow = N_s, ncol = n_rep)
+  
+  # Generate replicated datasets using posterior draws:
+  for (i in 1:n_rep) {
+    # For the s-th group, take one selected draw for mu and theta
+    mu_i <- mu_samples[selected_indices[i], s]
+    theta_i <- theta_samples[selected_indices[i], s]
+    
+    # Simulate N_s observations from Normal dist3
+    replicated_data[, i] <- rnorm(N_s, mean = mu_i, sd = theta_i)
+  }
+  
+  replicated_data_list[[s]] <- replicated_data
+  
+  # Calculate observed CoV for group s 
+  cov_obs[s] <- sd(obs) / mean(obs)
+  
+  # Calculate replicated CoVs
+  cov_rep[, s] <- apply(replicated_data, 2, function(x) sd(x) / mean(x))
+}
+
+# Create plots
+par(mfrow = c(2, 2))  
+
+cv_results_normal <- list()  # to store CV results for summary
+
+for (s in 1:n_groups) {
+  hist(obs_by_sample[[s]], breaks = 30, probability = TRUE,
+       main = paste("Sample", s, "- PPC (Normal Model)"),
+       xlab = "Thickness",
+       col = rgb(1, 0, 0, 0.5), border = "white")
+  
+  # Overlay histograms for each replicated dataset
+  for (i in 1:n_rep) {
+    hist(replicated_data_list[[s]][, i], breaks = 30, probability = TRUE,
+         add = TRUE, col = rgb(0, 0, 1, 0.01), border = NA)
+  }
+  
+  # Compute the 95% credible interval for the CV from replicated data
+  cov_interval <- quantile(cov_rep[, s], probs = c(0.025, 0.975))
+  
+  # Add a legend with the observed CV and its 95% CI
+  legend("topright", bty = "n",
+         legend = c(sprintf("CV obs = %.3f", cov_obs[s]),
+                    sprintf("95%% CI = [%.3f, %.3f]", cov_interval[1], cov_interval[2])))
+  
+  # Store the CV results
+  cv_results_normal[[s]] <- list(
+    observed = cov_obs[s],
+    interval = cov_interval,
+    within_interval = (cov_obs[s] >= cov_interval[1] && cov_obs[s] <= cov_interval[2])
+  )
+}
+
+
+```
+
+From looking at the plots and the CoV, I think the normal model performs better on some samples like sample 2 but worst in sample 4. with more data it could be easier to have a better understanding of which sample performs better but with the currently available data I think there are advantages to both models. The gamma model has the correct support however it performs worst on some of the samples, specially when there are a big number of observations far from the main cluster of observations like in sample 4. The normal distribution has the wrong support however it still provides a good fit and it simpler to interpret compared to a gamma distribution.
+
+I will make trace plots, ranks plot and posterior predictive checks for the normal disribution.
+
+
+```{r}
+
+stan_data <- list(
+  N = nrow(data),             
+  x = data$Thickness,         
+  sample = data$Sample         
+)
+
+# Fit 2 chains to make the plots
+fit <- stan(
+  file = "normal_model.stan",
+  data = stan_data,
+  iter = 10000,
+  chains = 2,
+)
+
+
+```
+
+
+```{r}
+
+#Trace plots for parameters
+mcmc_trace(fit, pars = c("mu[2]", "theta[2]")) 
+
+
+# Rank plots
+posterior_array <- as.array(fit)
+
+
+# Rank histograms for hyperparameters
+mcmc_rank_hist(posterior_array, 
+               pars = c("alpha_mu", "beta_mu", "alpha_theta", "beta_theta")) +
+  ggtitle("Rank Histograms for Hyperparameters")
+
+# Rank histograms for alpha parameters
+mcmc_rank_hist(posterior_array, 
+               pars = paste0("mu[", 1:4, "]")) +
+  ggtitle("Rank Histograms for Alpha Parameters") 
+
+# Rank histograms for beta parameters
+mcmc_rank_hist(posterior_array, 
+               pars = paste0("theta[", 1:4, "]")) +
+  ggtitle("Rank Histograms for Beta Parameters") 
+```
+They are all good.
+
+
+
+
+
+
+
+
+
+
+
+
+

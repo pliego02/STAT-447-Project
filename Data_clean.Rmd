@@ -16,7 +16,7 @@ library(readxl)
 library(dplyr)
 ```
 
-
+The main thing from this file is the get_dataset() function
 
 
 ### Dataset
@@ -107,7 +107,6 @@ thickness_data <- data.frame(
              rep(5, length(thickness_values_5)),
              rep(6, length(thickness_values_6)))
 )
-
 return(thickness_data)
 }
 
@@ -120,7 +119,7 @@ return(thickness_data)
 #####################################################################################
 This is unrelated to the project
 
-### Index plots for each sample
+### Time series for each sample
 
 ```{r, echo=TRUE, fig.height=12, fig.width=8}
 #Adjust plots
@@ -139,7 +138,29 @@ for (i in seq_along(ts_list)) {
        ylab="Thickness", xlab="Index",lwd=2)
 }
 
+```
 
+
+Density plots foe each sample
+
+
+```{r}
+
+
+par(mfrow=c(3,2), mar=c(4,4,2,1))
+
+thickness_data <- get_dataset()
+
+# Create a list of thickness values for each sample
+samples <- 1:6
+ts_list <- lapply(samples, function(i) thickness_data$Thickness[thickness_data$Sample == i])
+
+# Plot density for each sample
+for (i in seq_along(ts_list)) {
+  dens <- density(ts_list[[i]], bw=2)  # bw=2 smooths over every 2 integer values
+  plot(dens, main=paste("Sample", samples[i], "Density"), 
+       xlab="Thickness", ylab="Density", lwd=2)
+}
 ```
 
 
@@ -161,5 +182,89 @@ for (i in seq_along(ts_list)) {
 
 
 ```
+
+
+
+
+
+
+Playing around
+
+```{r, echo=TRUE}
+
+spec1 <- spec.pgram(ts_list[[2]], main = "Raw Periodogram of WW", log = "no")
+
+
+ spec1 <- spec.pgram(ts_list[[2]], main = "Raw Periodogram of WW", log = "no", spans = c(25))
+ spec1 <- spec.pgram(ts_list[[3]], main = "Raw Periodogram of WW", log = "no", c(15))
+
+max_indexes <- numeric(0)
+max_freqs <- numeric(0)
+
+max_index <- which.max(spec1$spec)
+
+max_freq <- spec1$freq[max_index]
+
+
+#spec_2 <- spec.pgram(ts_list[[2]], log = "no", spans = c(8,10))
+
+for (i in seq_along(ts_list)) {
+  periodogram <- spec.pgram(ts_list[[i]], main = "Raw Periodogram of WW", log = "no",
+             spans = c(9))
+  
+  max_indexes[i] <-  which.max(periodogram$spec)
+  max_freqs[i] <- periodogram$freq[max_index]
+  
+  periodogram
+}
+
+```
+
+```{r, echo=TRUE}
+#Adjust plots
+N <- length(ts_list[[2]])
+# data frame to store results
+results <- data.frame(p = numeric(0),
+                      omega = numeric(0),
+                      F_statistic = numeric(0),
+                      p_value = numeric(0))
+
+
+# For loop to fit N/2 models and find the significant p's
+for (p in 1:(N/2)) {
+  t <- 1:N 
+  omega_p <- 2 * pi * p / N 
+  
+  # Fit the model
+  linear_model <- lm(ts_list[[2]] ~ cos(omega_p * t) + sin(omega_p * t))
+  
+  
+  # Get the F-statistic from the model summary
+  model_summary <- summary(linear_model)
+  F_stat <- model_summary$fstatistic[1]
+   # Degrees of freedom for the model 
+  df1 <- model_summary$fstatistic[2]
+   # Residual degrees of freedom 
+  df2 <- model_summary$fstatistic[3] 
+  
+  # get the p-value 
+  p_value <- pf(F_stat, df1, df2, lower.tail = FALSE)
+  
+  # 99% significance level  
+if (p_value < 0.05) {
+    results <- rbind(results,
+                     data.frame(p = p,
+                                omega = omega_p,
+                                F_statistic = F_stat,
+                                p_value = p_value))
+  }
+} 
+results
+```
+
+
+
+
+
 
 
