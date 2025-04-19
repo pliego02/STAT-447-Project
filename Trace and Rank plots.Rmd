@@ -1,0 +1,264 @@
+---
+title: "Trace and rank plots"
+output: html_document
+date: "2025-04-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#if you do not have the package, type install.packages("name_of_the_package")
+library(knitr)
+library(tseries)
+library(readxl)
+library(dplyr)
+library(rstan)
+library(bayesplot)
+library(ggplot2)
+
+source("Data_clean.R")
+```
+
+
+```{r get data,  echo=FALSE, message=FALSE, warning=FALSE}
+# This here is to get the dataset, I am going to not use samples 4 and 6
+# as they are very small.
+data <- get_dataset()
+
+data <- data %>%
+  # Remove rows where Sample is 4 or 6
+  filter(!(Sample %in% c(4,6))) %>%
+  #re label sample 5 to 4
+  mutate(Sample = ifelse(Sample == 5, 4, Sample))
+```
+
+
+## Exponential model
+
+```{r exp fit, echo=FALSE, message=FALSE, warning=FALSE}
+stan_data <- list(
+  N = nrow(data),             
+  x = data$Thickness,         
+  sample = data$Sample         
+)
+
+# Fit 2 chains to make the plots
+exp_fit_plots <- stan(
+  file = "exponential_model.stan",
+  data = stan_data,
+  iter = 10000,
+  chains = 2,
+  set.seed(2002)
+)
+
+
+```
+
+
+
+```{r disgnostics plots gamma,  echo=FALSE, message=FALSE, warning=FALSE, fig.height=5, fig.width=8}
+#Trace plots for parameters
+traceplot(exp_fit_plots, pars = c("lambda[2]")) 
+
+# Rank plots
+posterior_array <- as.array(exp_fit_plots)
+
+
+
+# Rank histograms for lambda parameters
+mcmc_rank_hist(posterior_array, 
+               pars = paste0("lambda[", 1:4, "]")) +
+  ggtitle("Rank Histograms for lambda Parameters")
+ 
+
+
+```
+
+
+
+
+## Gamma model 
+
+```{r gamma fit, echo=FALSE, message=FALSE, warning=FALSE}
+stan_data <- list(
+  N = nrow(data),             
+  x = data$Thickness,         
+  sample = data$Sample         
+)
+
+# Fit 2 chains to make the plots
+gamma_fit_plots <- stan(
+  file = "gamma_model.stan",
+  data = stan_data,
+  iter = 10000,
+  chains = 2,
+  set.seed(2002)
+)
+
+
+```
+
+
+
+
+
+```{r disgnostics plots gamma,  echo=FALSE, message=FALSE, warning=FALSE, fig.height=5, fig.width=8}
+#Trace plots for parameters
+traceplot(gamma_fit_plots, pars = c("alpha[2]", "beta[2]")) 
+traceplot(gamma_fit_plots, pars = c("mu_alpha", "theta_alpha")) 
+
+# Rank plots
+posterior_array <- as.array(gamma_fit_plots)
+
+
+# Rank histograms for hyperparameters
+mcmc_rank_hist(gamma_fit_plots, 
+               pars = c("mu_alpha", "mu_beta", "theta_alpha", "theta_beta")) +
+    ggtitle("Rank Histograms for Hyper Parameters")
+
+
+
+# Rank histograms for alpha parameters
+mcmc_rank_hist(posterior_array, 
+               pars = paste0("alpha[", 1:4, "]")) +
+  ggtitle("Rank Histograms for Alpha Parameters")
+
+# Rank histograms for beta parameters
+mcmc_rank_hist(posterior_array, 
+               pars = paste0("beta[", 1:4, "]")) +
+  ggtitle("Rank Histograms for Beta Parameters") 
+
+
+```
+
+
+## normal model
+
+
+```{r normal model plots fit, echo=FALSE, message=FALSE, warning=FALSE, results = 'hide'}
+
+stan_data <- list(
+  N = nrow(data),             
+  x = data$Thickness,         
+  sample = data$Sample         
+)
+
+# Fit 2 chains to make the plots
+normal_fit_plot <- stan(
+  file = "normal_model.stan",
+  data = stan_data,
+  iter = 10000,
+  chains = 2,
+  set.seed(2002)
+)
+
+```
+
+```{r plotsnoraml model condition, echo=FALSE, message=FALSE, warning=FALSE,fig.height=5, fig.width=8}
+
+#Trace plots for parameters
+traceplot(normal_fit_plot, pars = c("mu[2]", "theta[2]")) 
+traceplot(normal_fit_plot, pars = c("alpha_mu", "beta_mu")) 
+
+# Rank plots
+posterior_array <- as.array(gamma_fit_plots)
+
+
+# Rank histograms for hyperparameters
+mcmc_rank_hist(normal_fit_plot, 
+               pars = c("alpha_mu", "beta_mu", "alpha_theta", "beta_theta")) +
+    ggtitle("Rank Histograms for Hyper Parameters")
+
+
+
+# Rank histograms for mu parameters
+mcmc_rank_hist(normal_fit_plot, 
+               pars = paste0("mu[", 1:4, "]")) +
+  ggtitle("Rank Histograms for Mu Parameters")
+
+# Rank histograms for theta parameters
+mcmc_rank_hist(normal_fit_plot, 
+               pars = paste0("theta[", 1:4, "]")) +
+  ggtitle("Rank Histograms for Theta Parameters") 
+```
+
+
+## AR(1) models
+
+```{r normal model AR plots fit, echo=FALSE, message=FALSE, warning=FALSE, results = 'hide'}
+
+
+N <- nrow(data)
+G <- length(unique(data$Sample))
+y <- data$Thickness
+group <- data$Sample
+
+
+# find the first and last row for each Sample
+# ChatGpt was used to help debug this and how to handle the indexes properly
+# in stan
+lims <- data %>%
+  mutate(row_id = row_number()) %>%
+    group_by(Sample) %>%
+  summarize(first = min(row_id),
+            last  = max(row_id))
+
+
+# make the stan data
+stan_data <- list(
+  N         = N,
+  G         = G,
+  y         = y,
+  group     = group,
+  first_obs = lims$first,
+  last_obs  = lims$last
+)
+
+
+# Fit 2 chains to make the plots
+normal_AR_fit_plot <- stan(
+  file = "normal_AR(1)_model.stan",
+  data = stan_data,
+  iter = 10000,
+  chains = 2,
+  set.seed(2002)
+)
+
+```
+
+```{r plots normal AR model condition, echo=FALSE, message=FALSE, warning=FALSE,fig.height=5, fig.width=8}
+par(mfrow = c(2, 2))  
+
+traceplot(normal_AR_fit_plot, pars = c("mu[2]", "theta[2]")) 
+traceplot(normal_AR_fit_plot, pars = c("alpha_mu", "beta_mu")) 
+traceplot(normal_AR_fit_plot, pars = c("phi")) 
+
+
+# Rank plots
+posterior_array <- as.array(normal_AR_fit_plot)
+
+
+# Rank histograms for hyperparameters
+mcmc_rank_hist(normal_AR_fit_plot, 
+               pars = c("alpha_mu", "beta_mu", "alpha_theta", "beta_theta")) +
+    ggtitle("Rank Histograms for Hyper Parameters")
+
+mcmc_rank_hist(normal_AR_fit_plot, 
+               pars = c("phi")) +
+    ggtitle("Rank Histograms for Phi Parameter")
+
+
+
+# Rank histograms for mu parameters
+mcmc_rank_hist(posterior_array, 
+               pars = paste0("mu[", 1:4, "]")) +
+  ggtitle("Rank Histograms for Mu Parameters")
+
+# Rank histograms for theta parameters
+mcmc_rank_hist(posterior_array, 
+               pars = paste0("theta[", 1:4, "]")) +
+  ggtitle("Rank Histograms for Theta Parameters") 
+```
+
+
+
+

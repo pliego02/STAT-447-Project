@@ -1,0 +1,46 @@
+---
+title: 'STAT 447 Project Proposal'
+author: 'Daniel Pliego Mier 29619889'
+date: "14 March, 2025"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#if you do not have the package, type install.packages("name_of_the_package")
+library(knitr)
+library(tseries)
+library(readxl)
+library(dplyr)
+```
+
+
+
+```{r, echo=TRUE, fig.height=12, fig.width=8}
+source("/Users/pliego/STAT447 Project/Data_clean.Rmd")
+
+data <- get_dataset()
+
+
+```
+
+
+
+\begingroup\footnotesize
+$$
+\begin{aligned}
+\alpha_{\mu} &\sim \mathrm{Exp}(1) \\
+\beta_{\mu}   &\sim \mathrm{Exp}(1) \\
+\alpha_{\theta} &\sim \mathrm{Exp}(1) \\
+\beta_{\theta}  &\sim \mathrm{Exp}(1) \\
+
+\mu_i    &\sim \mathrm{Gamma}(\alpha_{\mu}, \beta_{\mu}) \\
+\theta_i &\sim \mathrm{Gamma}(\alpha_{\theta}, \beta_{\theta}) \\
+\phi_i   &\sim \mathrm{Normal}(0, 0.5)\\
+
+X_{f_i} &\sim \mathrm{Normal}(\mu_i, \theta_i) 
+   \quad\text{(first observation)} \\
+X_n     &\sim \mathrm{Normal}(\mu_i + \phi_i\,(X_{n-1} - \mu_i),\;\theta_i)
+  
+\end{aligned}
+$$
+\endgroup

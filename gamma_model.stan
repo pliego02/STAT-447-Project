@@ -1,5 +1,5 @@
 data {
-  //same as before
+  //same as in exponential 
     // Total number of observations
   int<lower=1> N;      
     // Observed thicknesses
@@ -9,13 +9,13 @@ data {
 }
 
 parameters {
-  // Hyperparameters (rate parameters for gamma priors)
+  // Hyperparameters for the gamma
   real<lower=0> mu_alpha;
   real<lower=0> mu_beta;
   real<lower=0> theta_alpha;
   real<lower=0> theta_beta;
 
-  // Sample specific parameters
+  // Sample parameters
   vector<lower=0>[4] alpha;
   vector<lower=0>[4] beta;
 }
@@ -39,7 +39,16 @@ model {
 }
 
 
-
+generated quantities {
+  // x_rep is an array of replicated observations I will make one for each 
+  // observed x
+  vector[N] x_rep;
+  for (n in 1:N) {
+    // sample from gamma using the sample parameters, the hyper parameters
+    // are fixed
+    x_rep[n] = gamma_rng(alpha[sample[n]], beta[sample[n]]);
+  }
+}
 
 
 

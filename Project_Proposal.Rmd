@@ -36,11 +36,40 @@ data <- get_dataset()
 #Print head
 head(data)
 
-
 ```
+model:
+\begingroup\footnotesize
+$$
+\begin{aligned}
+\alpha_{\mu} &\sim {Exp}(1) \\
+\alpha_{\theta}  &\sim {Exp}(1) \\
+\beta_{\mu} &\sim {Exp}(1) \\
+\beta_{\theta}  &\sim {Exp}(1) \\
+\mu_i \mid \alpha_{\mu}, \beta_{\mu} &\sim {Gamma}(\alpha_{\mu},\beta_{\mu}) \\
+\theta_i  \mid \alpha_{\theta}, \beta_{\theta} &\sim {Gamma}(\alpha_{\theta}, \beta_{\theta}) \\
+X_n \mid \mu_i , \theta_i &\sim {Normal}(\mu_i , \theta_i)
+\end{aligned}
+$$
+\endgroup
 
 
-
+model:
+\begingroup\footnotesize
+$$
+\begin{aligned}
+\alpha_{\mu} &\sim {Exp}(1) \\
+\beta_{\mu}   &\sim {Exp}(1) \\
+\alpha_{\theta} &\sim {Exp}(1) \\
+\beta_{\theta}  &\sim {Exp}(1) \\
+\mu_i    &\sim {Gamma}(\alpha_{\mu}, \beta_{\mu}) \\
+\theta_i &\sim {Gamma}(\alpha_{\theta}, \beta_{\theta}) \\
+\phi_i   &\sim {Normal}(0, 0.5)\\
+X_{f_i} &\sim {Normal}(\mu_i, \theta_i) 
+   \quad\text{(first observation)} \\
+X_n     &\sim {Normal}(\mu_i + \phi_i\,(X_{n-1} - \mu_i),\;\theta_i)
+\end{aligned}
+$$
+\endgroup
 
 
 

@@ -39,6 +39,17 @@ model {
 }
 
 
+generated quantities {
+  // x_rep is an array of replicated observations I will make one for each 
+  // observed x
+  vector[N] x_rep;
+  for (n in 1:N) {
+    // sample from normal using the sample parameters, the hyper parameters
+    // are fixed
+    x_rep[n] = normal_rng(mu[sample[n]], theta[sample[n]]);
+  }
+}
+
 
 
 
