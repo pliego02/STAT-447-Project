@@ -13,7 +13,7 @@ library(dplyr)
 
 get_dataset <- function() {
 # First sample
-data_cracks_1 <- read_excel("/Users/pliego/Downloads/HC05_crack_seal_statistics_optical ms.xlsx",
+data_cracks_1 <- read_excel("HC05_crack_seal_statistics_optical ms.xlsx",
                           skip = 1, sheet = 'Profile 1')
 
 thickness_values_1 <- data_cracks_1$`thickness (um)`
@@ -23,16 +23,16 @@ thickness_values_1 <- thickness_values_1[1:(length(thickness_values_1) - 3)]
 
 
 # Second sample
-data_cracks_2 <- read_excel("/Users/pliego/Downloads/HC05_crack_seal_statistics_optical ms.xlsx",
+data_cracks_2 <- read_excel("HC05_crack_seal_statistics_optical ms.xlsx",
                             sheet = 'Profiles 2, 3, 4, 5')
 
 thickness_values_2 <- na.omit(data_cracks_2$Thickness)
 
 # Third sample
-data_cracks_3_1 <- read_excel("/Users/pliego/Downloads/HC05_crack_seal_statistics_optical ms.xlsx",
+data_cracks_3_1 <- read_excel("HC05_crack_seal_statistics_optical ms.xlsx",
                             sheet = 'Profile 6', skip = 2)
 
-data_cracks_3_2 <- read_excel("/Users/pliego/Downloads/HC05_crack_seal_statistics_optical ms.xlsx",
+data_cracks_3_2 <- read_excel("HC05_crack_seal_statistics_optical ms.xlsx",
                             sheet = 'Profile 7', skip = 2)
 
 thickness_values_3_1 <-  na.omit(data_cracks_3_1$thickness)
@@ -46,20 +46,20 @@ thickness_values_3 <- c(thickness_values_3_1, thickness_values_3_2)
 
 
 # Fourth sample
-data_cracks_4 <- read_excel("/Users/pliego/Downloads/HC05_crack_seal_statistics_optical ms.xlsx",
+data_cracks_4 <- read_excel("HC05_crack_seal_statistics_optical ms.xlsx",
                             sheet = 'Profile 8', skip = 2)
 
 thickness_values_4 <- na.omit(data_cracks_4$Thickness)
 
 # Fifth sample
-data_cracks_5 <- read_excel("/Users/pliego/Downloads/HC05_crack_seal_statistics_optical ms.xlsx",
+data_cracks_5 <- read_excel("HC05_crack_seal_statistics_optical ms.xlsx",
                             sheet = 'Profile 9', skip = 2)
 
 thickness_values_5 <- na.omit(data_cracks_5$Thickness)
 
 
 # Sixth sample
-data_cracks_6 <- read_excel("/Users/pliego/Downloads/HC05_crack_seal_statistics_optical ms.xlsx",
+data_cracks_6 <- read_excel("HC05_crack_seal_statistics_optical ms.xlsx",
                             sheet = 'Profile 10', skip = 2)
 
 thickness_values_6 <- na.omit(data_cracks_6$Thickness)
