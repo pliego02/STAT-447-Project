@@ -1,0 +1,86 @@
+---
+title: 'Testing on new data'
+author: 'Daniel Pliego'
+date: " Novembe, 2025"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(tseries)
+library(readxl)
+library(dplyr)
+library(tinytex)
+```
+
+
+
+```{r}
+## This is a new function to add new samples into the dataset
+## It assumes the data set is already ordered and that it only contains a column
+## named thickness
+
+add_new_data <- function(existing_data, new_data) {
+   # ---------- ERROR CHECKS ----------
+  
+  # Check new_data has exactly one column
+  if (ncol(new_data) != 1) {
+    stop("Error: new_data must contain exactly one column named 'Thickness'.")
+  }
+  
+  # Check column name is exactly "Thickness"
+  if (!all(colnames(new_data) == "Thickness")) {
+    stop("Error: The column in new_data must be named 'Thickness'.")
+  }
+  
+  # Check the Thickness column is numeric
+  if (!is.numeric(new_data$Thickness)) {
+    stop("Error: new_data$Thickness must be numeric.")
+  }
+  
+  # Optional: ensure no missing values
+  if (any(is.na(new_data$Thickness))) {
+    stop("Error: new_data$Thickness contains NA values.")
+  }
+  
+  # 1. Determine the next sample number
+  # (Existing data should have a column 'Sample')
+  next_id <- max(existing_data$Sample, na.rm = TRUE) + 1
+  
+  # 2. Assign this new sample number to the incoming data
+  new_data <- new_data %>%
+    mutate(Sample = next_id)
+  
+  # 3. Combine both datasets
+  combined <- bind_rows(existing_data, new_data)
+  
+  # 4. Return combined dataset
+  return(combined)
+}
+```
+
+
+
+
+I can now call the add_new_data() function to add the new samples
+
+
+```{r}
+new_sample <- read.csv("image11_first_cut_lengths.csv")
+
+new_sample_thickness <- new_sample %>%
+  select(Thickness = Thickness_um)
+
+dataset <- add_new_data(data, new_sample_thickness)
+tail(dataset)
+```
+
+
+
+
+```{r}
+
+```
