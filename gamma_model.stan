@@ -5,7 +5,7 @@ data {
     // Observed thicknesses
   real<lower=0> x[N];           
   // Sample index (
-  int<lower=1, upper=4> sample[N]; 
+  int<lower=1, upper=5> sample[N]; 
 }
 
 parameters {
@@ -16,8 +16,8 @@ parameters {
   real<lower=0> theta_beta;
 
   // Sample parameters
-  vector<lower=0>[4] alpha;
-  vector<lower=0>[4] beta;
+  vector<lower=0>[5] alpha;
+  vector<lower=0>[5] beta;
 }
 
 model {

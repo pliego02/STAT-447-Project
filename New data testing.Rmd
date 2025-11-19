@@ -14,6 +14,9 @@ library(tseries)
 library(readxl)
 library(dplyr)
 library(tinytex)
+library(rstan)
+library(bayesplot)
+library(ggplot2)
 ```
 
 
@@ -77,6 +80,473 @@ new_sample_thickness <- new_sample %>%
 dataset <- add_new_data(data, new_sample_thickness)
 tail(dataset)
 ```
+
+
+Now I will start testing the new samples in all of the test I did before
+
+```{r}
+## First call the stan model
+stan_data <- list(
+  N = nrow(dataset),          
+  x = dataset$Thickness,       
+  sample = dataset$Sample      
+)
+
+# Compile and sample
+exp_fit <- stan(
+  file = "exponential_model.stan",
+  data = stan_data,
+  iter = 10000,
+  chains = 1,
+  set.seed(2002)
+)
+```
+
+
+
+```{r}
+s <- 5   # NEW sample only
+
+idx <- which(stan_data$sample == s)
+data_obs <- stan_data$x[idx]
+N_obs <- length(idx)
+
+exp_fit <- extract(exp_fit)
+n_iter <- nrow(exp_fit$cov_rep)
+n_rep <- 100
+
+rep_mat <- t(exp_fit$x_rep[, idx])
+cov_obs <- sd(data_obs) / mean(data_obs)
+cov_ci <- quantile(exp_fit$cov_rep[, s], probs = c(0.025, 0.975))
+
+hist(data_obs, breaks = 30, prob = TRUE,
+     main = paste("Posterior Predictive Check Sample", s),
+     xlab = "Thickness",
+     col = rgb(1,0,0,0.5), border = "white")
+
+draw_idxs <- sample(1:n_iter, n_rep)
+
+for (i in draw_idxs) {
+    hist(rep_mat[, i], breaks = 30, prob = TRUE,
+         add = TRUE, col = rgb(0,0,1,0.01), border = NA)
+}
+
+legend("topright", bty = "n", legend = c(
+    sprintf("CV obs = %.3f", cov_obs),
+    sprintf("95%% CI = [%.3f, %.3f]", cov_ci[1], cov_ci[2])
+))
+
+```
+
+As expected the exponential does not work
+
+
+
+
+
+```{r}
+stan_data <- list(
+  N = nrow(dataset),          
+  x = dataset$Thickness,       
+  sample = dataset$Sample      
+)
+
+# Compile and sample
+gamma_fit <- stan(
+  file = "gamma_model.stan",
+  data = stan_data,
+  iter = 10000,
+  chains = 1,
+  set.seed(2002)
+)
+```
+
+
+
+
+```{r}
+set.seed(2002)
+
+# Only 1 plot, so no multi-panel layout needed
+par(mfrow = c(1,1))
+
+gamma_fit <- extract(gamma_fit)
+
+# Pre-compute observed CoV per sample
+cov_obs <- tapply(stan_data$x, stan_data$sample,
+                  function(xx) sd(xx)/mean(xx))
+
+n_iter <- nrow(gamma_fit$x_rep)
+n_rep  <- 100
+
+# ----------------------------
+#   ONLY SAMPLE 5
+# ----------------------------
+s <- 5
+
+# indices for sample 5
+idx      <- which(stan_data$sample == s)
+data_obs <- stan_data$x[idx]
+
+# posterior predictive reps for sample 5
+rep_mat  <- t(gamma_fit$x_rep[, idx])
+
+# CoV of posterior predictive draws
+cov_rep_samps <- apply(rep_mat, 2, function(xx) sd(xx)/mean(xx))
+cov_ci        <- quantile(cov_rep_samps, c(0.025, 0.975))
+
+# plot observed histogram
+hist(data_obs,
+     breaks = 30,
+     prob   = TRUE,
+     main   = paste("Sample", s),
+     xlab   = "x",
+     col    = rgb(1, 0, 0, 0.5),
+     border = "white")
+
+# overlay some posterior predictive histograms
+draw_idxs <- sample(n_iter, n_rep)
+
+for (i in draw_idxs) {
+  hist(rep_mat[, i],
+       breaks = 30,
+       prob   = TRUE,
+       add    = TRUE,
+       col    = rgb(0, 0, 1, 0.01),
+       border = NA)
+}
+
+# CoV legend
+legend("topright", bty = "n",
+       legend = c(
+         sprintf("CV obs = %.3f", cov_obs[s]),
+         sprintf("95%% CI = [%.3f, %.3f]",
+                 cov_ci[1], cov_ci[2])
+       ))
+
+```
+
+Wow, the gamma here appears to fit very well
+
+
+
+```{r}
+stan_data <- list(
+  N = nrow(dataset),          
+  x = dataset$Thickness,       
+  sample = dataset$Sample      
+)
+rstan::stan_model("normal_model.stan", verbose = TRUE)
+
+# Compile and sample
+normal_fit <- stan(
+  file = "normal_model.stan",
+  data = stan_data,
+  iter = 10000,
+  chains = 1,
+  set.seed(2002)
+)
+```
+
+
+
+
+
+```{r}
+set.seed(2002)
+
+# Only 1 plot
+par(mfrow = c(1,1))
+
+normal_fit <- extract(normal_fit)
+
+# Pre-compute observed CoV per sample
+cov_obs <- tapply(stan_data$x, stan_data$sample,
+                  function(xx) sd(xx)/mean(xx))
+
+n_iter <- nrow(normal_fit$x_rep)
+n_rep  <- 100   # number of posterior predictive histograms to overlay
+
+
+# ----------------------------
+#   ONLY SAMPLE 5
+# ----------------------------
+s <- 5
+
+idx      <- which(stan_data$sample == s)
+data_obs <- stan_data$x[idx]
+
+# posterior predictive matrix
+rep_mat  <- t(normal_fit$x_rep[, idx])
+
+# posterior predictive CoV samples
+cov_rep_samps <- apply(rep_mat, 2, function(xx) sd(xx)/mean(xx))
+cov_ci        <- quantile(cov_rep_samps, c(0.025, 0.975))
+
+
+# plot observed histogram
+hist(data_obs,
+     breaks = 30,
+     prob   = TRUE,
+     main   = paste("Sample", s),
+     xlab   = "x",
+     col    = rgb(1, 0, 0, 0.5),
+     border = "white")
+
+# overlay posterior predictive histograms
+draw_idxs <- sample(n_iter, n_rep)
+
+for (i in draw_idxs) {
+  hist(rep_mat[, i],
+       breaks = 30,
+       prob   = TRUE,
+       add    = TRUE,
+       col    = rgb(0, 0, 1, 0.01),
+       border = NA)
+}
+
+# add legend
+legend("topright", bty = "n",
+       legend = c(
+         sprintf("CV obs = %.3f", cov_obs[s]),
+         sprintf("95%% CI = [%.3f, %.3f]",
+                 cov_ci[1], cov_ci[2])
+       ))
+
+```
+The normal also works very well as we can see
+
+
+Next I want to explore the correlations and after that I will make a log normal
+test for all the samples
+
+
+```{r}
+## first we transform the data into what my model expects
+
+N <- nrow(dataset)
+G <- length(unique(dataset$Sample))
+y <- dataset$Thickness
+group <- dataset$Sample
+
+
+# find the first and last row for each Sample
+# ChatGpt was used to help debug this and how to handle the indexes properly
+# in stan
+lims <- dataset %>%
+  mutate(row_id = row_number()) %>%
+    group_by(Sample) %>%
+  summarize(first = min(row_id),
+            last  = max(row_id))
+
+
+# make the stan data
+stan_data <- list(
+  N         = N,
+  G         = G,
+  y         = y,
+  group     = group,
+  first_obs = lims$first,
+  last_obs  = lims$last
+)
+
+
+ar_model_fit_obj <- stan(
+  file = "normal_AR(1)_model.stan",
+  data = stan_data,
+  iter = 10000,
+  chains = 1,
+  set.seed(2002)
+)
+```
+
+
+```{r}
+## Now it is 5 parameters but ill keep the same names as on the main files for consistency right now
+ar_model_fit_obj_4_params <- stan(
+  file = "normal_AR(1)_model_4_params.stan",
+  data = stan_data,
+  iter = 10000,
+  chains = 1,
+  set.seed(2002)
+)
+```
+
+```{r}
+set.seed(2002)
+
+# Just one plot
+par(mfrow = c(1,1))   
+
+# Extract posterior draws
+ar_model_fit <- extract(ar_model_fit_obj)
+y_rep    <- ar_model_fit$y_rep   
+
+# Observed data and grouping
+y_obs <- stan_data$y
+grp   <- stan_data$group
+
+# Compute observed CoV per group
+cov_obs <- tapply(y_obs, grp, function(yy) sd(yy) / mean(yy))
+
+n_iter <- nrow(y_rep)  
+n_rep  <- 100        
+
+# Only 5th group
+s <- 5
+idx      <- which(grp == s)
+data_obs <- y_obs[idx]
+
+rep_mat  <- t(y_rep[, idx])
+
+# CoV for each posterior replicate
+cov_rep_samps <- apply(rep_mat, 2, function(xx) sd(xx) / mean(xx))
+cov_ci        <- quantile(cov_rep_samps, c(0.025, 0.975))
+
+# Plot observed histogram
+hist(data_obs,
+     breaks    = 30,
+     prob      = TRUE,
+     main      = paste("Group", s),
+     xlab      = "Thickness",
+     col       = rgb(1, 0, 0, 0.5),
+     border    = "white")
+
+# Overlay a random subset of posterior histograms
+draw_idxs <- sample(n_iter, n_rep)
+for (i in draw_idxs) {
+  hist(rep_mat[, i],
+       breaks = 30,
+       prob   = TRUE,
+       add    = TRUE,
+       col    = rgb(0, 0, 1, 0.01),
+       border = NA)
+}
+
+# Add CoV legend
+legend("topright", bty = "n",
+       legend = c(
+         sprintf("CV obs = %.3f",      cov_obs[s]),
+         sprintf("95%% CI = [%.3f, %.3f]",
+                 cov_ci[1], cov_ci[2])
+       ))
+
+```
+The PPC seems appropriate, now I will make a table to check the results of autocorrelation
+
+
+
+
+
+```{r phi-ci-table, echo=FALSE, message=FALSE, warning = FALSE}
+lims <- lims %>%
+  mutate(size = last - first + 1)
+
+phi_summary <- summary(ar_model_fit_obj_4_params,
+                       pars = paste0("phi[", 1:5, "]"))$summary
+
+phi_df <- as.data.frame(phi_summary) %>%
+  select(mean = mean, `2.5%` = `2.5%`, `97.5%` = `97.5%`) %>%
+  mutate(Sample = 1:5)
+
+# Join with sample sizes
+phi_df <- left_join(phi_df, lims, by = "Sample")
+
+#Compute significance bounds and determine if autocorrelation is significant
+phi_df <- phi_df %>%
+  mutate(
+    bound = 2 / sqrt(size),
+    significant = (`2.5%` > bound) | (`97.5%` < -bound)
+  )
+
+# kable table
+phi_df %>%
+  select(Sample, mean, `2.5%`, `97.5%`, bound, significant) %>%
+  kable(digits = 3, caption = "95% Confidence Intervals and Autocorrelation Significance per Sample")
+```
+
+```{r phi-shared-significance, echo=FALSE ,message=FALSE, warning=FALSE}
+
+#get N
+lims <- lims %>% mutate(size = last - first + 1)
+N_total <- sum(lims$size)
+
+#Extract posterior summary for the shared phi
+phi_sum <- summary(ar_model_fit_obj, pars = "phi")$summary
+phi_df <- tibble(
+  Sample = "all",
+  mean      = phi_sum["phi", "mean"],
+  `2.5%`    = phi_sum["phi", "2.5%"],
+  `97.5%`   = phi_sum["phi", "97.5%"],
+  size      = N_total
+)
+
+# Compute the bound
+phi_df <- phi_df %>%
+  mutate(
+    bound       = 2 / sqrt(size),
+    significant = (`2.5%` > bound) | (`97.5%` < -bound)
+  )
+
+# 4
+phi_df %>%
+  select(Sample, mean, `2.5%`, `97.5%`, size, bound, significant) %>%
+  kable(digits = 3,
+        caption = "95% Confidence Intervals and Autocorrelation Significance Shared")
+
+
+```
+
+The examples above show that there is probably no significant autocorrelation 
+between bands for sample 5.
+
+I want to make a fix into the autocorrelation calculation so that I can deal with 
+the different cuts. This has to be done in the stan model and maybe the data will need 
+a fix to handle it properly. 
+
+
+```{r}
+
+```
+
+
+
+```{r}
+
+```
+
+
+
+
+```{r}
+
+```
+
+
+
+
+```{r}
+
+```
+
+
+
+```{r}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
